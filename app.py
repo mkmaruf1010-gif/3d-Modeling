@@ -151,14 +151,17 @@ if len(st.session_state.captured_images) >= 2:
 
             hex_colors = [f'rgb({c[0]},{c[1]},{c[2]})' for c in plot_cols]
             
-            # 3D Interactive Plot
-            fig = px.scatter_3d(
-                x=plot_pts[:, 0], y=plot_pts[:, 1], z=plot_pts[:, 2],
-                color=hex_colors, color_discrete_map="identity",
-                title="Lightweight 3D Point Cloud Preview"
-            )
-            fig.update_traces(marker=dict(size=2))
-            st.plotly_chart(fig, use_container_width=True)
+            # 3D Interactive Plot Option (Checkbox দিয়ে কন্ট্রোল করা)
+            if st.checkbox("👁️ Show Interactive 3D Point Cloud Preview (Optional)"):
+                fig = px.scatter_3d(
+                    x=plot_pts[:, 0], y=plot_pts[:, 1], z=plot_pts[:, 2],
+                    color=hex_colors, color_discrete_map="identity",
+                    title="Lightweight 3D Point Cloud Preview"
+                )
+                fig.update_traces(marker=dict(size=2))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("💡 ৩D প্রিভিউ বন্ধ রাখা হয়েছে যাতে ব্রাউজার ফাস্ট থাকে। আপনি সরাসরি নিচে থেকে Shapefile ZIP ডাউনলোড করতে পারেন।")
             
             # GeoPandas GIS Package Generation
             with tempfile.TemporaryDirectory() as temp_dir:
