@@ -13,7 +13,7 @@ from PIL import Image
 # Page Setup
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Live GIS Photogrammetry App", page_icon="📷", layout="wide")
-st.title("📷 Live Photogrammetry & Overlap Detector")
+st.title(" Live Photogrammetry & Overlap Detector")
 st.caption("ক্যামেরা অন করে ল্যান্ডস্কেপের ছবি তুলুন। অ্যাপ আপনাকে অটোমেটিক ওভারল্যাপ পার্সেন্টেজ জানিয়ে দেবে।")
 
 # Session State Initialization
@@ -68,14 +68,14 @@ with col1:
         # Show Overlap Metrics
         st.write("---")
         if len(st.session_state.captured_images) == 0:
-            st.info("ℹ️ প্রথম ছবি তোলার জন্য প্রস্তুত। **Capture Frame** চাপুন।")
+            st.info(" প্রথম ছবি তোলার জন্য প্রস্তুত। **Capture Frame** চাপুন।")
         else:
             if 60 <= overlap_percentage <= 85:
-                st.success(f"🎯 **অনুকূল ওভারল্যাপ:** {overlap_percentage}% (ছবি তোলার আদর্শ সময়!)")
+                st.success(f" **অনুকূল ওভারল্যাপ:** {overlap_percentage}% (ছবি তোলার আদর্শ সময়!)")
             elif overlap_percentage > 85:
-                st.warning(f"⚠️ **অতিরিক্ত ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা আরেকটু পাশে সরান)")
+                st.warning(f" **অতিরিক্ত ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা আরেকটু পাশে সরান)")
             else:
-                st.error(f"❌ **কম ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা পূর্বের ফ্রেমের কাছে আনুন)")
+                st.error(f" **কম ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা পূর্বের ফ্রেমের কাছে আনুন)")
 
         # Save Button
         if st.button("📸 Capture & Add Frame"):
@@ -104,7 +104,7 @@ st.write("---")
 st.subheader("3. Export to GIS Shapefile")
 
 if len(st.session_state.captured_images) >= 3:
-    if st.button("🚀 Process & Generate GIS Shapefile (.zip)"):
+    if st.button(" Process & Generate GIS Shapefile (.zip)"):
         with st.spinner("লাইভ পয়েন্ট ক্লাউড ও শেপফাইল তৈরি হচ্ছে..."):
             with tempfile.TemporaryDirectory() as temp_dir:
                 
@@ -164,10 +164,10 @@ if len(st.session_state.captured_images) >= 3:
                 # Download Button
                 with open(zip_path, "rb") as f:
                     st.download_button(
-                        label="📦 Download Shapefile ZIP Package",
+                        label=" Download Shapefile ZIP Package",
                         data=f,
                         file_name="GIS_Live_Landscape_Shapefile.zip",
                         mime="application/zip"
                     )
 else:
-    st.info("💡 শেপফাইল তৈরি করতে ন্যূনতম ৩টি ওভারল্যাপিং ছবি ক্যাপচার করুন।")
+    st.info(" শেপফাইল তৈরি করতে ন্যূনতম ৩টি ওভারল্যাপিং ছবি ক্যাপচার করুন।")
