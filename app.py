@@ -146,21 +146,14 @@ if len(st.session_state.captured_images) >= 2:
             geo_lons = user_lon + lon_offsets
             geo_alts = user_alt + pts_arr[:, 2]
             
-            # Optional 3D Preview (Safe Downsample)
-            if st.checkbox("👁️ Show 3D Point Cloud Preview", value=False):
-                limit = min(3000, len(pts_arr))
-                idx_sample = np.random.choice(len(pts_arr), size=limit, replace=False)
-                hex_cols = [f'rgb({c[0]},{c[1]},{c[2]})' for c in cols_arr[idx_sample]]
-                
-                fig = px.scatter_3d(
-                    x=geo_lons[idx_sample], y=geo_lats[idx_sample], z=geo_alts[idx_sample],
-                    color=hex_cols, color_discrete_map="identity",
-                    labels={'x': 'Longitude', 'y': 'Latitude', 'z': 'Altitude (m)'},
-                    title="Real-world Geographic 3D Point Cloud"
-                )
-                fig.update_traces(marker=dict(size=2))
-                st.plotly_chart(fig, use_container_width=True)
-                
+          # 3D Interactive Plot
+            fig = px.scatter_3d(
+                x=plot_pts[:, 0], y=plot_pts[:, 1], z=plot_pts[:, 2],
+                color=hex_colors, color_discrete_map="identity",
+                title="Lightweight 3D Point Cloud Preview"
+            )
+            fig.update_traces(marker=dict(size=2))
+            st.plotly_chart(fig, use_container_width=True)
             # GeoPandas Shapefile Export
             with tempfile.TemporaryDirectory() as temp_dir:
                 geometry = [Point(xyz) for xyz in zip(geo_lons, geo_lats, geo_alts)]
