@@ -47,14 +47,14 @@ if loc_option == "🌐 Auto Browser GPS Location":
         user_alt = loc['coords'].get('altitude', 10.0) if loc['coords'].get('altitude') is not None else 10.0
         st.sidebar.success(f"📍 জিপিএস সনাক্ত হয়েছে:\nLat: {user_lat:.6f}, Lon: {user_lon:.6f}")
     else:
-        st.sidebar.warning("⚠️ ব্রাউজারের লোকেশন অনুমতি দিন অথবা ম্যানুয়াল ইনপুট ব্যবহার করুন।")
+        st.sidebar.warning("⚠️️ ব্রাউজারের লোকেশন অনুমতি দিন অথবা ম্যানুয়াল ইনপুট ব্যবহার করুন।")
 
 else: # Manual Input
     user_lat = st.sidebar.number_input("Latitude (অক্ষাংশ)", value=23.810300, format="%.6f")
     user_lon = st.sidebar.number_input("Longitude (দ্রাঘিমাংশ)", value=90.412500, format="%.6f")
     user_alt = st.sidebar.number_input("Base Altitude (উচ্চতা মিটার)", value=10.0)
 
-cam_heading = st.sidebar.slider("ک্যামেরার দিক / Heading Direction (Degrees)", 0, 360, 0, help="0° = North, 90° = East, 180° = South, 270° = West")
+cam_heading = st.sidebar.slider("ক্যামেরার দিক / Heading Direction (Degrees)", 0, 360, 0, help="0° = North, 90° = East, 180° = South, 270° = West")
 
 # -------------------------------------------------------------------
 # 2. Input Tabs (Upload & Live Camera Capture)
@@ -82,7 +82,7 @@ with tab2:
 # Gallery
 if st.session_state.captured_images:
     st.write("---")
-    st.subheader(f"🖼️ ক্যাপচারকৃত ছবি ({len(st.session_state.captured_images)} টি)")
+    st.subheader(f"🖼️ সংগৃহীত ছবি ({len(st.session_state.captured_images)} টি)")
     cols = st.columns(min(len(st.session_state.captured_images), 5))
     for idx, img in enumerate(st.session_state.captured_images):
         with cols[idx % 5]:
@@ -99,6 +99,8 @@ st.write("---")
 st.subheader("3. Geo-Referenced 3D Reconstruction")
 
 if len(st.session_state.captured_images) >= 2:
+    show_preview = st.checkbox("👁️ Show 3D Point Cloud Preview (Optional)", value=False)
+    
     if st.button("🚀 Georeference & Export GIS Shapefile"):
         with st.spinner("ভৌগোলিক স্থানাঙ্ক অনুযায়ী ৩D মডেল প্রসেস হচ্ছে..."):
             
@@ -120,7 +122,9 @@ if len(st.session_state.captured_images) >= 2:
                 local_x = (grid_x * step - w/2) * 0.02 + (idx * 0.5)
                 local_y = (grid_y * step - h/2) * 0.02
                 
-                r, g, b = sub_img[:, :, 0].astype(float), sub_img[:, :, 1].astype(float), sub_img[:, :, 2].astype(float)
+                r = sub_img[:, :, 0].astype(float)
+                g = sub_img[:, :, 1].astype(float)
+                b = sub_img[:, :, 2].astype(float)
                 local_z = (r * 0.299 + g * 0.587 + b * 0.114) * 0.01
                 
                 # Apply Heading Rotation Matrix
@@ -137,8 +141,6 @@ if len(st.session_state.captured_images) >= 2:
             cols_arr = np.vstack(all_cols_list)
             
             # Convert Relative Meters to Geographic Coordinates (Lat/Lon)
-            # 1 degree latitude ~ 111,000 meters
-            # 1 degree longitude ~ 111,000 * cos(latitude) meters
             lat_offsets = pts_arr[:, 1] / 111000.0
             lon_offsets = pts_arr[:, 0] / (111000.0 * np.cos(np.radians(user_lat)))
             
@@ -146,14 +148,21 @@ if len(st.session_state.captured_images) >= 2:
             geo_lons = user_lon + lon_offsets
             geo_alts = user_alt + pts_arr[:, 2]
             
-          # 3D Interactive Plot
-            fig = px.scatter_3d(
-                x=plot_pts[:, 0], y=plot_pts[:, 1], z=plot_pts[:, 2],
-                color=hex_colors, color_discrete_map="identity",
-                title="Lightweight 3D Point Cloud Preview"
-            )
-            fig.update_traces(marker=dict(size=2))
-            st.plotly_chart(fig, use_container_width=True)
+            # 3D Interactive Preview (Fix: Sampled correctly)
+            if show_preview:
+                limit = min(3000, len(pts_arr))
+                idx_sample = np.random.choice(len(pts_arr), size=limit, replace=False)
+                hex_cols = [f'rgb({c[0]},{c[1]},{c[2]})' for c in cols_arr[idx_sample]]
+                
+                fig = px.scatter_3d(
+                    x=geo_lons[idx_sample], y=geo_lats[idx_sample], z=geo_alts[idx_sample],
+                    color=hex_cols, color_discrete_map="identity",
+                    labels={'x': 'Longitude', 'y': 'Latitude', 'z': 'Altitude (m)'},
+                    title="Real-world Geographic 3D Point Cloud"
+                )
+                fig.update_traces(marker=dict(size=2))
+                st.plotly_chart(fig, use_container_width=True)
+                
             # GeoPandas Shapefile Export
             with tempfile.TemporaryDirectory() as temp_dir:
                 geometry = [Point(xyz) for xyz in zip(geo_lons, geo_lats, geo_alts)]
@@ -184,4 +193,4 @@ if len(st.session_state.captured_images) >= 2:
                         mime="application/zip"
                     )
 else:
-    st.info("💡 অন্তত ২টি ছবি দিয়ে প্রসেসিং স্টার্ট করুন।")
+    st.info("💡 অন্তত ২টি ছবি আপলোড অথবা ক্যাপচার করে ৩D প্রসেসিং স্টার্ট করুন।")
