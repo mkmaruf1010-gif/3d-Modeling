@@ -1,5 +1,7 @@
-libgl1-mesa-glx
-libegl1-mesa
+libgl1
+libglx-mesa0
+libegl1
+libegl-mesa0
 libx11-xcb1
 libglu1-mesa
 libgomp1
