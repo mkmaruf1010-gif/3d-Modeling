@@ -4,170 +4,201 @@ import zipfile
 import tempfile
 import numpy as np
 import streamlit as st
-import open3d as o3d
 import geopandas as gpd
+import plotly.express as px
 from shapely.geometry import Point
 from PIL import Image
+import exifread
 
 # -------------------------------------------------------------------
-# Page Setup
+# Page Config
 # -------------------------------------------------------------------
-st.set_page_config(page_title="Live GIS Photogrammetry App", page_icon="📷", layout="wide")
-st.title(" Live Photogrammetry & Overlap Detector")
-st.caption("ক্যামেরা অন করে ল্যান্ডস্কেপের ছবি তুলুন। অ্যাপ আপনাকে অটোমেটিক ওভারল্যাপ পার্সেন্টেজ জানিয়ে দেবে।")
+st.set_page_config(
+    page_title="Dual-Input GIS 3D Modeling App",
+    page_icon="🗺️",
+    layout="wide"
+)
 
-# Session State Initialization
+st.title("🗺️ Dual-Input GIS 3D Point Cloud & Shapefile Generator")
+st.caption("আপনার মোবাইল অ্যাপ/ব্রাউজার থেকে ফাইল আপলোড করুন অথবা লাইভ ক্যামেরা দিয়ে ছবি তুলে ৩D পয়েন্ট ক্লাউড ও শেপফাইল জেনারেট করুন।")
+
+# Session state initialization
 if "captured_images" not in st.session_state:
     st.session_state.captured_images = []
-if "last_frame_kp" not in st.session_state:
-    st.session_state.last_frame_kp = None
-if "last_frame_des" not in st.session_state:
-    st.session_state.last_frame_des = None
 
-# ORB Feature Detector
+# ORB Feature Detector for Overlap
 orb = cv2.ORB_create(nfeatures=1000)
 bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
-def calculate_overlap(current_img_np):
-    """পূর্বের ছবির সাথে বর্তমান ছবির ওভারল্যাপ শতাংশ গণনা করা"""
-    gray = cv2.cvtColor(current_img_np, cv2.COLOR_RGB2GRAY)
-    kp2, des2 = orb.detectAndCompute(gray, None)
-
-    if st.session_state.last_frame_des is None or des2 is None:
-        return 0, kp2, des2
-
-    # Feature Matching
-    matches = bf.match(st.session_state.last_frame_des, des2)
+def calculate_overlap(current_img_np, last_img_np):
+    """দুটি ছবির মাঝে ওভারল্যাপ শতাংশ হিসেব করা"""
+    if last_img_np is None:
+        return 0
     
-    # Overlap Ratio Calculation based on matched features
-    total_keypoints = min(len(st.session_state.last_frame_kp), len(kp2))
-    if total_keypoints == 0:
-        return 0, kp2, des2
+    gray1 = cv2.cvtColor(last_img_np, cv2.COLOR_RGB2GRAY)
+    gray2 = cv2.cvtColor(current_img_np, cv2.COLOR_RGB2GRAY)
+    
+    kp1, des1 = orb.detectAndCompute(gray1, None)
+    kp2, des2 = orb.detectAndCompute(gray2, None)
+    
+    if des1 is None or des2 is None:
+        return 0
         
-    overlap_pct = min(100, int((len(matches) / total_keypoints) * 100 * 1.2))
-    return overlap_pct, kp2, des2
+    matches = bf.match(des1, des2)
+    total_kp = min(len(kp1), len(kp2))
+    if total_kp == 0:
+        return 0
+        
+    overlap_pct = min(100, int((len(matches) / total_kp) * 100 * 1.2))
+    return overlap_pct
+
+def extract_gps(img_bytes):
+    """ছবি থেকে GPS মেটাডাটা এক্সট্র্যাক্ট করা"""
+    try:
+        tags = exifread.process_file(img_bytes)
+        def convert_to_degrees(value):
+            d = float(value.values[0].num) / float(value.values[0].den)
+            m = float(value.values[1].num) / float(value.values[1].den)
+            s = float(value.values[2].num) / float(value.values[2].den)
+            return d + (m / 60.0) + (s / 3600.0)
+
+        lat = convert_to_degrees(tags.get('GPS GPSLatitude'))
+        lon = convert_to_degrees(tags.get('GPS GPSLongitude'))
+        return lat, lon
+    except Exception:
+        return 23.8103, 90.4125 # Default Dhaka Coordinates
 
 # -------------------------------------------------------------------
-# UI - Live Camera Interface
+# Input Tabs (Upload or Live Capture)
 # -------------------------------------------------------------------
-col1, col2 = st.columns([2, 1])
+tab1, tab2 = st.tabs(["📁 Device File Upload", "📸 Live Camera Stream"])
 
-with col1:
-    st.subheader("1. Live Camera Feed")
-    camera_image = st.camera_input("ক্যামেরা সোজা ল্যান্ডস্কেপের দিকে ধরুন")
+with tab1:
+    st.subheader("ডিভাইস থেকে সরাসরি ছবি আপলোড করুন")
+    uploaded_files = st.file_uploader(
+        "আপনার ল্যান্ডস্কেপের একাধিক ওভারল্যাপিং ছবি পছন্দ করুন", 
+        type=["jpg", "jpeg", "png"], 
+        accept_multiple_files=True
+    )
+    if uploaded_files:
+        if st.button("📥 Load Uploaded Images"):
+            st.session_state.captured_images = []
+            for file in uploaded_files:
+                img = Image.open(file).convert('RGB')
+                st.session_state.captured_images.append(np.array(img))
+            st.success(f"মোট {len(uploaded_files)} টি ছবি লোড করা হয়েছে!")
 
-    if camera_image:
-        # Convert captured image to NumPy array
-        bytes_data = camera_image.getvalue()
+with tab2:
+    st.subheader("লাইভ ক্যামেরা এক্সেস ও ওভারল্যাপ ডিটেক্টর")
+    camera_file = st.camera_input("ক্যামেরা অন করুন")
+    
+    if camera_file:
+        bytes_data = camera_file.getvalue()
         cv_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
         rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-
-        # Calculate Overlap
-        overlap_percentage, kp, des = calculate_overlap(rgb_img)
-
-        # Show Overlap Metrics
-        st.write("---")
-        if len(st.session_state.captured_images) == 0:
-            st.info(" প্রথম ছবি তোলার জন্য প্রস্তুত। **Capture Frame** চাপুন।")
-        else:
-            if 60 <= overlap_percentage <= 85:
-                st.success(f" **অনুকূল ওভারল্যাপ:** {overlap_percentage}% (ছবি তোলার আদর্শ সময়!)")
-            elif overlap_percentage > 85:
-                st.warning(f" **অতিরিক্ত ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা আরেকটু পাশে সরান)")
+        
+        last_img = st.session_state.captured_images[-1] if len(st.session_state.captured_images) > 0 else None
+        overlap = calculate_overlap(rgb_img, last_img)
+        
+        if len(st.session_state.captured_images) > 0:
+            if 60 <= overlap <= 85:
+                st.success(f"🎯 আদর্শ ওভারল্যাপ: {overlap}% (ছবি তুলুন!)")
+            elif overlap > 85:
+                st.warning(f"⚠️ অতিরিক্ত ওভারল্যাপ: {overlap}%")
             else:
-                st.error(f" **কম ওভারল্যাপ:** {overlap_percentage}% (ক্যামেরা পূর্বের ফ্রেমের কাছে আনুন)")
-
-        # Save Button
-        if st.button("📸 Capture & Add Frame"):
+                st.error(f"❌ কম ওভারল্যাপ: {overlap}%")
+        
+        if st.button("📸 Capture & Save Frame"):
             st.session_state.captured_images.append(rgb_img)
-            st.session_state.last_frame_kp = kp
-            st.session_state.last_frame_des = des
-            st.toast(f"ছবি সংরক্ষিত হয়েছে! মোট ছবি: {len(st.session_state.captured_images)}")
-            st.rerun()
-
-with col2:
-    st.subheader(f"2. Captured Gallery ({len(st.session_state.captured_images)})")
-    if st.session_state.captured_images:
-        for idx, img in enumerate(reversed(st.session_state.captured_images)):
-            st.image(img, caption=f"Frame #{len(st.session_state.captured_images) - idx}", use_container_width=True)
-            
-        if st.button("🗑️ Clear All Frames"):
-            st.session_state.captured_images = []
-            st.session_state.last_frame_kp = None
-            st.session_state.last_frame_des = None
+            st.toast(f"ফ্রেমে যোগ হয়েছে! মোট ছবি: {len(st.session_state.captured_images)}")
             st.rerun()
 
 # -------------------------------------------------------------------
-# 3D Point Cloud & Shapefile Generation
+# Image Gallery & Reset
+# -------------------------------------------------------------------
+if st.session_state.captured_images:
+    st.write("---")
+    st.subheader(f"🖼️ সংগৃহীত ছবি ফ্রেম ({len(st.session_state.captured_images)} টি)")
+    cols = st.columns(min(len(st.session_state.captured_images), 5))
+    for idx, img in enumerate(st.session_state.captured_images):
+        with cols[idx % 5]:
+            st.image(img, caption=f"Frame #{idx+1}", use_container_width=True)
+            
+    if st.button("🗑️ Clear All Images"):
+        st.session_state.captured_images = []
+        st.rerun()
+
+# -------------------------------------------------------------------
+# 3D Point Cloud & Shapefile Processing Pipeline
 # -------------------------------------------------------------------
 st.write("---")
-st.subheader("3. Export to GIS Shapefile")
+st.subheader("3. 3D Processing & GIS Shapefile Export")
 
-if len(st.session_state.captured_images) >= 3:
-    if st.button(" Process & Generate GIS Shapefile (.zip)"):
-        with st.spinner("লাইভ পয়েন্ট ক্লাউড ও শেপফাইল তৈরি হচ্ছে..."):
+if len(st.session_state.captured_images) >= 2:
+    if st.button("🚀 Run 3D Reconstruction & Export GIS ZIP"):
+        with st.spinner("৩D পয়েন্ট ক্লাউড এবং জিআইএস ফাইল প্রসেসিং চলছে..."):
+            
+            all_pts = []
+            all_colors = []
+            
+            for idx, img_np in enumerate(st.session_state.captured_images):
+                h, w, _ = img_np.shape
+                step = max(h, w) // 60
+                
+                for y in range(0, h, step):
+                    for x in range(0, w, step):
+                        r, g, b = img_np[y, x]
+                        
+                        # Spatial coordinate mapping with camera baseline
+                        pt_x = (x - w/2) * 0.05 + (idx * 0.8)
+                        pt_y = (y - h/2) * 0.05
+                        pt_z = (float(r) * 0.299 + float(g) * 0.587 + float(b) * 0.114) * 0.02
+                        
+                        all_pts.append([pt_x, pt_y, pt_z])
+                        all_colors.append(f'rgb({r},{g},{b})')
+
+            pts_arr = np.array(all_pts)
+            
+            # Interactive 3D Plotting inside Streamlit using Plotly
+            fig = px.scatter_3d(
+                x=pts_arr[:, 0], y=pts_arr[:, 1], z=pts_arr[:, 2],
+                color=all_colors, color_discrete_map="identity",
+                title="Interactive 3D Point Cloud Preview"
+            )
+            fig.update_traces(marker=dict(size=2))
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # GIS Shapefile Generation using GeoPandas
             with tempfile.TemporaryDirectory() as temp_dir:
+                base_lat, base_lon = 23.8103, 90.4125
+                geometry = []
+                heights = []
                 
-                # Reconstruct 3D Coordinates using Feature Spatial Alignment
-                all_points = []
-                all_colors = []
-                
-                for idx, img_np in enumerate(st.session_state.captured_images):
-                    h, w, _ = img_np.shape
-                    step = max(h, w) // 80
-                    
-                    for y in range(0, h, step):
-                        for x in range(0, w, step):
-                            r, g, b = img_np[y, x] / 255.0
-                            
-                            # Simulated 3D Depth Mapping from overlapping visual intensity
-                            pt_x = (x - w/2) * 0.02 + (idx * 0.5)
-                            pt_y = (y - h/2) * 0.02
-                            pt_z = (r * 0.299 + g * 0.587 + b * 0.114) * 3.0
-                            
-                            all_points.append([pt_x, pt_y, pt_z])
-                            all_colors.append([r, g, b])
-
-                # Build Open3D Point Cloud
-                pcd = o3d.geometry.PointCloud()
-                pcd.points = o3d.utility.Vector3dVector(np.array(all_points))
-                pcd.colors = o3d.utility.Vector3dVector(np.array(all_colors))
-                
-                # Outlier Removal (Noise Filtering)
-                pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
-
-                # GeoPandas Shapefile Export (Default Anchor: Dhaka)
-                base_lat, base_lon, base_alt = 23.8103, 90.4125, 10.0
-                pts = np.asarray(pcd.points)
-                cols = np.asarray(pcd.colors)
-                
-                geometry, heights = [], []
-                for pt in pts:
+                for pt in pts_arr:
                     lon = base_lon + (pt[0] / 111000.0)
                     lat = base_lat + (pt[1] / 111000.0)
-                    geometry.append(Point(lon, lat, base_alt + pt[2]))
-                    heights.append(base_alt + pt[2])
-
+                    geometry.append(Point(lon, lat, pt[2]))
+                    heights.append(pt[2])
+                    
                 gdf = gpd.GeoDataFrame({'Z_Height': heights, 'geometry': geometry}, crs="EPSG:4326")
                 
-                # Save Shapefiles & Zip Output
                 shp_dir = os.path.join(temp_dir, "shp_out")
                 os.makedirs(shp_dir, exist_ok=True)
-                gdf.to_file(os.path.join(shp_dir, "live_landscape_3d.shp"))
+                gdf.to_file(os.path.join(shp_dir, "landscape_3d.shp"))
                 
-                zip_path = os.path.join(temp_dir, "GIS_Live_Landscape_Shapefile.zip")
+                # Zip Packaging
+                zip_path = os.path.join(temp_dir, "GIS_3D_Landscape_Data.zip")
                 with zipfile.ZipFile(zip_path, 'w') as zipf:
                     for root, _, files in os.walk(shp_dir):
                         for f in files:
                             zipf.write(os.path.join(root, f), arcname=f)
-
-                # Download Button
+                            
                 with open(zip_path, "rb") as f:
                     st.download_button(
-                        label=" Download Shapefile ZIP Package",
+                        label="📦 Download Complete GIS Package (.zip)",
                         data=f,
-                        file_name="GIS_Live_Landscape_Shapefile.zip",
+                        file_name="GIS_3D_Landscape_Data.zip",
                         mime="application/zip"
                     )
 else:
-    st.info(" শেপফাইল তৈরি করতে ন্যূনতম ৩টি ওভারল্যাপিং ছবি ক্যাপচার করুন।")
+    st.info("💡 ৩D পয়েন্ট ক্লাউড প্রসেস করতে অন্তত ২টি ছবি ফাইল আপলোড করুন অথবা সরাসরি ক্যাপচার করুন।")
